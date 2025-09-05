@@ -61,9 +61,9 @@ sudo systemctl restart postgresql
 sudo mkdir -p /opt/calendar-rs
 sudo chown $USER:$USER /opt/calendar-rs
 
-# Clone your repository (replace with your repo URL)
+# Clone your repository
 cd /opt/calendar-rs
-git clone <your-repo-url> .
+git clone https://github.com/And329/calendar-bmstu-rs.git .
 
 # Or upload files manually
 # scp -r calendar-rs/ user@server:/opt/calendar-rs/
