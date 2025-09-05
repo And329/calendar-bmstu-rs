@@ -1,0 +1,48 @@
+# Rust build artifacts
+/target/
+
+# Environment variables
+.env
+.env.local
+.env.production
+
+# Database files
+*.db
+*.sqlite
+
+# Logs
+*.log
+logs/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Uploaded files (keep directory structure but ignore contents)
+uploads/*
+!uploads/.gitkeep
+
+# Backup files
+*.bak
+*.backup
+*.sql.backup
+
+# Temporary files
+*.tmp
+*.temp
+
+# Lock files
+Cargo.lock
+
+# Documentation build
+/doc/
+
+# Test coverage
+tarpaulin-report.html
