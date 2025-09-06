@@ -73,14 +73,14 @@ class CalendarApp {
     }
 
     handleTouchStart(e) {
-        if (this.currentView !== 'day' || window.innerWidth > 768) return;
+        if ((this.currentView !== 'day' && this.currentView !== 'week') || window.innerWidth > 768) return;
         
         this.touchStartX = e.touches[0].clientX;
         this.touchStartY = e.touches[0].clientY;
     }
 
     handleTouchEnd(e) {
-        if (this.currentView !== 'day' || window.innerWidth > 768) return;
+        if ((this.currentView !== 'day' && this.currentView !== 'week') || window.innerWidth > 768) return;
         if (!this.touchStartX || !this.touchStartY) return;
 
         const touchEndX = e.changedTouches[0].clientX;
@@ -92,10 +92,10 @@ class CalendarApp {
         // Only handle horizontal swipes (ignore vertical scrolling)
         if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
             if (deltaX > 0) {
-                // Swipe right - go to previous day
+                // Swipe right - go to previous period (day/week)
                 this.navigatePeriod(-1);
             } else {
-                // Swipe left - go to next day
+                // Swipe left - go to next period (day/week)
                 this.navigatePeriod(1);
             }
         }
@@ -310,10 +310,68 @@ class CalendarApp {
 
         // Get week start date
         const weekStart = this.getWeekStart(this.currentDate);
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekStart.getDate() + 6);
         
         // Create vertical week container
         const weekContainer = document.createElement('div');
         weekContainer.className = 'week-container';
+
+        // Add week header with week number and week tasks
+        const weekHeader = document.createElement('div');
+        weekHeader.className = 'week-header-section';
+        
+        const weekNumber = this.getWeekNumber(weekStart);
+        const weekTasks = this.getEventsForWeek(weekStart);
+        
+        weekHeader.innerHTML = `
+            <div class="week-info">
+                <div class="week-number-display">Неделя ${weekNumber}</div>
+                <div class="week-date-range">${weekStart.getDate()} ${weekStart.toLocaleDateString('ru-RU', { month: 'short' })} - ${weekEnd.getDate()} ${weekEnd.toLocaleDateString('ru-RU', { month: 'short' })}</div>
+            </div>
+            <div class="week-nav-info">
+                <div class="week-tasks-count">${weekTasks.length} задач на неделю</div>
+                <div class="swipe-hint-week">← свайп →</div>
+            </div>
+        `;
+        
+        // Week tasks container
+        const weekTasksContainer = document.createElement('div');
+        weekTasksContainer.className = 'week-tasks-container';
+        
+        if (weekTasks.length === 0) {
+            const noTasks = document.createElement('div');
+            noTasks.className = 'no-week-tasks';
+            noTasks.textContent = 'Нет задач на всю неделю';
+            weekTasksContainer.appendChild(noTasks);
+        } else {
+            weekTasks.forEach(event => {
+                const taskElement = document.createElement('div');
+                taskElement.className = `week-task-item ${event.event_type} priority-${event.priority || 'medium'}`;
+                
+                const eventStart = new Date(event.start_time);
+                const eventEnd = new Date(event.end_time);
+                const dayName = eventStart.toLocaleDateString('ru-RU', { weekday: 'short' });
+                
+                taskElement.innerHTML = `
+                    <div class="task-day">${dayName}</div>
+                    <div class="task-content">
+                        <div class="task-title">${event.title}</div>
+                        ${event.description ? `<div class="task-description">${event.description}</div>` : ''}
+                    </div>
+                `;
+                
+                taskElement.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.showEventDetails(event);
+                });
+                
+                weekTasksContainer.appendChild(taskElement);
+            });
+        }
+        
+        weekHeader.appendChild(weekTasksContainer);
+        weekContainer.appendChild(weekHeader);
 
         // Add each day as a vertical section
         const dayHeaders = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
@@ -580,19 +638,15 @@ class CalendarApp {
     getEventsForWeek(weekStartDate) {
         const weekEndDate = new Date(weekStartDate);
         weekEndDate.setDate(weekStartDate.getDate() + 6);
+        weekEndDate.setHours(23, 59, 59, 999);
         
         return this.events.filter(event => {
             const eventStart = new Date(event.start_time);
             const eventEnd = new Date(event.end_time);
             
-            // Check if event spans multiple days (likely a week event)
-            const eventDuration = (eventEnd.getTime() - eventStart.getTime()) / (1000 * 60 * 60 * 24);
-            
-            // If event is longer than 1 day and starts within this week, show it in week column
-            return eventDuration > 1 && 
-                   eventStart >= weekStartDate && 
-                   eventStart <= weekEndDate;
-        });
+            // Check if event falls within this week (any overlap)
+            return (eventStart <= weekEndDate && eventEnd >= weekStartDate);
+        }).sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
     }
 
     // Simplified event creation modal
