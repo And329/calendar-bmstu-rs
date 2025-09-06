@@ -1,7 +1,7 @@
 use axum::{
     body::Body,
     extract::{Multipart, Path, State},
-    http::{header, HeaderMap, StatusCode},
+    http::{header, StatusCode},
     response::Response,
     Json,
 };

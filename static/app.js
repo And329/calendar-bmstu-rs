@@ -1,17 +1,20 @@
 // University Calendar Application - Public Version
 class CalendarApp {
     constructor() {
-        this.currentView = 'month';
+        this.currentView = window.innerWidth <= 768 ? 'day' : 'month';
         this.currentDate = new Date();
         this.events = [];
         this.selectedDate = null;
         this.editingEvent = null;
+        this.touchStartX = 0;
+        this.touchStartY = 0;
         
         this.init();
     }
 
     init() {
         this.setupEventListeners();
+        this.updateViewToggle();
         this.loadEvents();
         this.renderCalendar();
     }
@@ -36,6 +39,15 @@ class CalendarApp {
         document.getElementById('fileUploadForm').addEventListener('submit', (e) => this.handleFileUpload(e));
         document.getElementById('cancelFileUpload').addEventListener('click', () => this.hideFileUploadModal());
 
+        // View toggle buttons
+        document.getElementById('monthViewBtn').addEventListener('click', () => this.switchView('month'));
+        document.getElementById('weekViewBtn').addEventListener('click', () => this.switchView('week'));
+        document.getElementById('dayViewBtn').addEventListener('click', () => this.switchView('day'));
+
+        // Touch/swipe events for mobile day view
+        document.addEventListener('touchstart', (e) => this.handleTouchStart(e), { passive: true });
+        document.addEventListener('touchend', (e) => this.handleTouchEnd(e), { passive: true });
+
         // Modal close buttons
         document.querySelectorAll('.modal .close').forEach(closeBtn => {
             closeBtn.addEventListener('click', (e) => {
@@ -51,14 +63,57 @@ class CalendarApp {
                 }
             });
         });
+
+        // Handle window resize for responsive view switching
+        window.addEventListener('resize', () => {
+            if (window.innerWidth <= 768 && this.currentView === 'month') {
+                this.switchView('day');
+            }
+        });
+    }
+
+    handleTouchStart(e) {
+        if (this.currentView !== 'day' || window.innerWidth > 768) return;
+        
+        this.touchStartX = e.touches[0].clientX;
+        this.touchStartY = e.touches[0].clientY;
+    }
+
+    handleTouchEnd(e) {
+        if (this.currentView !== 'day' || window.innerWidth > 768) return;
+        if (!this.touchStartX || !this.touchStartY) return;
+
+        const touchEndX = e.changedTouches[0].clientX;
+        const touchEndY = e.changedTouches[0].clientY;
+        
+        const deltaX = touchEndX - this.touchStartX;
+        const deltaY = touchEndY - this.touchStartY;
+        
+        // Only handle horizontal swipes (ignore vertical scrolling)
+        if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
+            if (deltaX > 0) {
+                // Swipe right - go to previous day
+                this.navigatePeriod(-1);
+            } else {
+                // Swipe left - go to next day
+                this.navigatePeriod(1);
+            }
+        }
+        
+        this.touchStartX = 0;
+        this.touchStartY = 0;
     }
 
     // Calendar Methods
-    setView(view) {
+    switchView(view) {
         this.currentView = view;
-        document.querySelectorAll('.view-controls .btn').forEach(btn => btn.classList.remove('active'));
-        document.getElementById(`${view}View`).classList.add('active');
+        this.updateViewToggle();
         this.renderCalendar();
+    }
+
+    updateViewToggle() {
+        document.querySelectorAll('.view-toggle .btn').forEach(btn => btn.classList.remove('active'));
+        document.getElementById(`${this.currentView}ViewBtn`).classList.add('active');
     }
 
     navigatePeriod(direction) {
@@ -249,13 +304,249 @@ class CalendarApp {
     }
 
     renderWeekView() {
-        // Simplified week view - would need more complex implementation
-        this.renderMonthView();
+        const grid = document.getElementById('calendarGrid');
+        grid.innerHTML = '';
+        grid.className = 'calendar-grid week-view-vertical';
+
+        // Get week start date
+        const weekStart = this.getWeekStart(this.currentDate);
+        
+        // Create vertical week container
+        const weekContainer = document.createElement('div');
+        weekContainer.className = 'week-container';
+
+        // Add each day as a vertical section
+        const dayHeaders = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
+        const dayHeadersShort = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+        
+        for (let i = 0; i < 7; i++) {
+            const date = new Date(weekStart);
+            date.setDate(weekStart.getDate() + i);
+            
+            const daySection = document.createElement('div');
+            daySection.className = 'week-day-section';
+            if (this.isToday(date)) daySection.classList.add('today');
+            
+            // Day header
+            const dayHeader = document.createElement('div');
+            dayHeader.className = 'week-day-header';
+            dayHeader.innerHTML = `
+                <div class="day-name">${dayHeaders[i]}</div>
+                <div class="day-date">${date.getDate()} ${date.toLocaleDateString('ru-RU', { month: 'short' })}</div>
+            `;
+            daySection.appendChild(dayHeader);
+            
+            // Events for this day
+            const eventsContainer = document.createElement('div');
+            eventsContainer.className = 'week-day-events';
+            
+            const eventsForDay = this.getEventsForDay(date);
+            
+            if (eventsForDay.length === 0) {
+                const noEvents = document.createElement('div');
+                noEvents.className = 'no-events-day';
+                noEvents.textContent = 'Нет событий';
+                eventsContainer.appendChild(noEvents);
+            } else {
+                eventsForDay.forEach(event => {
+                    const eventElement = document.createElement('div');
+                    eventElement.className = `week-event-item ${event.event_type} priority-${event.priority || 'medium'}`;
+                    
+                    const eventTime = new Date(event.start_time);
+                    const timeStr = eventTime.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+                    
+                    eventElement.innerHTML = `
+                        <div class="event-time">${timeStr}</div>
+                        <div class="event-content">
+                            <div class="event-title">${event.title}</div>
+                            ${event.location ? `<div class="event-location"><i class="fas fa-map-marker-alt"></i> ${event.location}</div>` : ''}
+                        </div>
+                    `;
+                    
+                    eventElement.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.showEventDetails(event);
+                    });
+                    
+                    eventsContainer.appendChild(eventElement);
+                });
+            }
+            
+            // Click handler for adding events to this day
+            daySection.addEventListener('click', (e) => {
+                if (e.target === daySection || e.target === eventsContainer || e.target.classList.contains('no-events-day')) {
+                    const eventDate = new Date(date);
+                    eventDate.setHours(9, 0, 0, 0);
+                    this.showEventModal(eventDate);
+                }
+            });
+            
+            daySection.appendChild(eventsContainer);
+            weekContainer.appendChild(daySection);
+        }
+        
+        grid.appendChild(weekContainer);
     }
 
     renderDayView() {
-        // Simplified day view - would need more complex implementation
-        this.renderMonthView();
+        const grid = document.getElementById('calendarGrid');
+        grid.innerHTML = '';
+        
+        // Check if mobile for compact view
+        if (window.innerWidth <= 768) {
+            grid.className = 'calendar-grid mobile-day-view';
+            this.renderMobileDayView(grid);
+        } else {
+            grid.className = 'calendar-grid day-view';
+            this.renderDesktopDayView(grid);
+        }
+    }
+
+    renderMobileDayView(grid) {
+        // Mobile compact day view
+        const dayContainer = document.createElement('div');
+        dayContainer.className = 'mobile-day-container';
+        
+        // Day header with swipe indicator
+        const dayHeader = document.createElement('div');
+        dayHeader.className = 'mobile-day-header';
+        const dayName = this.currentDate.toLocaleDateString('ru-RU', { weekday: 'long' });
+        const monthName = this.currentDate.toLocaleDateString('ru-RU', { month: 'long' });
+        dayHeader.innerHTML = `
+            <div class="day-info">
+                <div class="day-name">${dayName}</div>
+                <div class="day-date">${this.currentDate.getDate()} ${monthName}</div>
+            </div>
+            <div class="swipe-hint">← свайп →</div>
+        `;
+        if (this.isToday(this.currentDate)) dayHeader.classList.add('today');
+        dayContainer.appendChild(dayHeader);
+
+        // Events list for the day
+        const eventsContainer = document.createElement('div');
+        eventsContainer.className = 'mobile-events-list';
+        
+        const eventsForDay = this.getEventsForDay(this.currentDate);
+        
+        if (eventsForDay.length === 0) {
+            const noEvents = document.createElement('div');
+            noEvents.className = 'no-events';
+            noEvents.textContent = 'Нет событий на этот день';
+            eventsContainer.appendChild(noEvents);
+        } else {
+            eventsForDay.forEach(event => {
+                const eventElement = document.createElement('div');
+                eventElement.className = `mobile-event-item ${event.event_type} priority-${event.priority || 'medium'}`;
+                
+                const eventTime = new Date(event.start_time);
+                const timeStr = eventTime.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+                
+                eventElement.innerHTML = `
+                    <div class="event-time">${timeStr}</div>
+                    <div class="event-content">
+                        <div class="event-title">${event.title}</div>
+                        ${event.description ? `<div class="event-description">${event.description}</div>` : ''}
+                        ${event.location ? `<div class="event-location"><i class="fas fa-map-marker-alt"></i> ${event.location}</div>` : ''}
+                    </div>
+                `;
+                
+                eventElement.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.showEventDetails(event);
+                });
+                
+                eventsContainer.appendChild(eventElement);
+            });
+        }
+        
+        dayContainer.appendChild(eventsContainer);
+        
+        // Add event button
+        const addButton = document.createElement('button');
+        addButton.className = 'mobile-add-event-btn';
+        addButton.innerHTML = '<i class="fas fa-plus"></i> Добавить событие';
+        addButton.addEventListener('click', () => {
+            const eventDate = new Date(this.currentDate);
+            eventDate.setHours(9, 0, 0, 0);
+            this.showEventModal(eventDate);
+        });
+        dayContainer.appendChild(addButton);
+        
+        grid.appendChild(dayContainer);
+    }
+
+    renderDesktopDayView(grid) {
+        // Desktop day view (existing implementation)
+        // Add time column header
+        const timeHeader = document.createElement('div');
+        timeHeader.className = 'calendar-header';
+        timeHeader.textContent = 'Время';
+        grid.appendChild(timeHeader);
+
+        // Add day header
+        const dayHeader = document.createElement('div');
+        dayHeader.className = 'calendar-header';
+        const dayName = this.currentDate.toLocaleDateString('ru-RU', { weekday: 'long' });
+        dayHeader.innerHTML = `<div>${dayName}</div><div class="header-date">${this.currentDate.getDate()}</div>`;
+        if (this.isToday(this.currentDate)) dayHeader.classList.add('today');
+        grid.appendChild(dayHeader);
+
+        // Create time slots (8 AM to 8 PM)
+        for (let hour = 8; hour <= 20; hour++) {
+            // Time label
+            const timeLabel = document.createElement('div');
+            timeLabel.className = 'time-label';
+            timeLabel.textContent = `${hour}:00`;
+            grid.appendChild(timeLabel);
+
+            // Time slot for the day
+            const date = new Date(this.currentDate);
+            date.setHours(hour, 0, 0, 0);
+
+            const timeSlot = document.createElement('div');
+            timeSlot.className = 'time-slot';
+            
+            // Add events for this time slot
+            const eventsForSlot = this.getEventsForTimeSlot(date);
+            eventsForSlot.forEach(event => {
+                const eventElement = document.createElement('div');
+                eventElement.className = `event-item ${event.event_type} priority-${event.priority || 'medium'}`;
+                eventElement.textContent = event.title;
+                eventElement.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.showEventDetails(event);
+                });
+                timeSlot.appendChild(eventElement);
+            });
+
+            // Click handler for time slot
+            timeSlot.addEventListener('click', () => {
+                this.showEventModal(date);
+            });
+
+            grid.appendChild(timeSlot);
+        }
+    }
+
+    getEventsForDay(date) {
+        return this.events.filter(event => {
+            const eventStart = new Date(event.start_time);
+            return this.isSameDay(eventStart, date);
+        }).sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+    }
+
+    getEventsForTimeSlot(date) {
+        return this.events.filter(event => {
+            const eventStart = new Date(event.start_time);
+            const eventEnd = new Date(event.end_time);
+            
+            // Check if event overlaps with this hour slot
+            const slotStart = new Date(date);
+            const slotEnd = new Date(date);
+            slotEnd.setHours(slotEnd.getHours() + 1);
+            
+            return (eventStart < slotEnd && eventEnd > slotStart);
+        });
     }
 
     // Event Methods
